@@ -4,7 +4,7 @@
 # See LICENSE file for full license.
 
 from . import AWSObject, AWSProperty
-from .validators import boolean, integer
+from .validators import boolean, integer, real_boolean
 
 
 class Source(AWSProperty):
@@ -103,7 +103,7 @@ class AutoScalingThresholds(AWSProperty):
 class Environment(AWSProperty):
     props = {
         'Key': (basestring, True),
-        'Secure': (bool, False),
+        'Secure': (real_boolean, False),
         'Value': (basestring, True),
     }
 
@@ -111,7 +111,7 @@ class Environment(AWSProperty):
 class LoadBasedAutoScaling(AWSProperty):
     props = {
         'DownScaling': (AutoScalingThresholds, False),
-        'Enable': (bool, False),
+        'Enable': (real_boolean, False),
         'UpScaling': (AutoScalingThresholds, False),
     }
 

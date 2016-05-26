@@ -1,5 +1,5 @@
 from . import AWSObject, AWSProperty
-from .validators import positive_integer
+from .validators import positive_integer, real_boolean
 
 
 def validate_authorizer_ttl(ttl_value):
@@ -34,7 +34,7 @@ class ApiKey(AWSObject):
 
     props = {
         "Description": (basestring, False),
-        "Enabled": (bool, False),
+        "Enabled": (real_boolean, False),
         "Name": (basestring, False),
         "StageKeys": ([StageKey], False)
     }
@@ -77,13 +77,13 @@ class ClientCertificate(AWSObject):
 class MethodSetting(AWSProperty):
 
     props = {
-        "CacheDataEncrypted": (bool, False),
+        "CacheDataEncrypted": (real_boolean, False),
         "CacheTtlInSeconds": (positive_integer, False),
-        "CachingEnabled": (bool, False),
-        "DataTraceEnabled": (bool, False),
+        "CachingEnabled": (real_boolean, False),
+        "DataTraceEnabled": (real_boolean, False),
         "HttpMethod": (basestring, False),
         "LoggingLevel": (basestring, False),
-        "MetricsEnabled": (bool, False),
+        "MetricsEnabled": (real_boolean, False),
         "ResourcePath": (basestring, False),
         "ThrottlingBurstLimit": (positive_integer, False),
         "ThrottlingRateLimit": (positive_integer, False)
@@ -93,7 +93,7 @@ class MethodSetting(AWSProperty):
 class StageDescription(AWSProperty):
 
     props = {
-        "CacheClusterEnabled": (bool, False),
+        "CacheClusterEnabled": (real_boolean, False),
         "CacheClusterSize": (basestring, False),
         "ClientCertificateId": (basestring, False),
         "DeploymentId": (basestring, False),
@@ -154,7 +154,7 @@ class Method(AWSObject):
     resource_type = "AWS::ApiGateway::Method"
 
     props = {
-        "ApiKeyRequired": (bool, False),
+        "ApiKeyRequired": (real_boolean, False),
         "AuthorizationType": (basestring, False),
         "AuthorizerId": (basestring, False),
         "HttpMethod": (basestring, False),
@@ -217,7 +217,7 @@ class Stage(AWSObject):
     resource_type = "AWS::ApiGateway::Stage"
 
     props = {
-        "CacheClusterEnabled": (bool, False),
+        "CacheClusterEnabled": (real_boolean, False),
         "CacheClusterSize": (basestring, False),
         "ClientCertificateId": (basestring, False),
         "DeploymentId": (basestring, False),

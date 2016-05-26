@@ -3,7 +3,7 @@
 #
 # See LICENSE file for full license.
 
-from . import AWSHelperFn, AWSObject, AWSProperty, Tags
+from . import AWSHelperFn, AWSObject, AWSProperty, Tags, PythonCall
 from .validators import integer, positive_integer, network_port
 
 
@@ -19,6 +19,14 @@ class AliasTarget(AWSHelperFn):
 
     def JSONrepr(self):
         return self.data
+
+    def to_python_call(self):
+        aliases = {
+            'HostedZoneId': 'hostedzoneid',
+            'DNSName': 'dnsname',
+            'EvaluateTargetHealth': 'evaluatetargethealth',
+        }
+        return PythonCall(self, {aliases[k]: v for k, v in self.data.items()})
 
 
 class GeoLocation(AWSProperty):

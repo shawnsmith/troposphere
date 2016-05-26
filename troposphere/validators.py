@@ -6,10 +6,19 @@ from re import compile
 
 
 def boolean(x):
-    if x in [True, 1, '1', 'true', 'True']:
+    """ Coerce to a string """
+    if real_boolean(x):
         return "true"
-    if x in [False, 0, '0', 'false', 'False']:
+    else:
         return "false"
+
+
+def real_boolean(x):
+    """ Coerce to a bool """
+    if x in [True, 1, '1', 'true', 'True']:
+        return True
+    if x in [False, 0, '0', 'false', 'False']:
+        return False
     raise ValueError
 
 

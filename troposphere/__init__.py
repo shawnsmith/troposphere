@@ -9,6 +9,7 @@ import re
 import sys
 import types
 
+from validators import real_boolean
 from . import validators
 
 __version__ = "1.6.0"
@@ -33,6 +34,7 @@ class BaseAWSObject(object):
     def __init__(self, title, template=None, **kwargs):
         self.title = title
         self.template = template
+        self.kwargs = kwargs
         # Cache the keys for validity checks
         self.propnames = self.props.keys()
         self.attributes = ['DependsOn', 'DeletionPolicy',
@@ -186,9 +188,15 @@ class BaseAWSObject(object):
         else:
             return {}
 
+    def to_python_call(self):
+        return PythonCall(self, **self.kwargs)
+
 
 class AWSObject(BaseAWSObject):
     dictname = 'Properties'
+
+    def to_python_call(self):
+        return PythonCall(self, self.title, **self.kwargs)
 
 
 class AWSDeclaration(BaseAWSObject):
@@ -200,6 +208,9 @@ class AWSDeclaration(BaseAWSObject):
 
     def __init__(self, title, **kwargs):
         super(AWSDeclaration, self).__init__(title, **kwargs)
+
+    def to_python_call(self):
+        return PythonCall(self, self.title, **self.kwargs)
 
 
 class AWSProperty(BaseAWSObject):
@@ -265,6 +276,9 @@ class Base64(AWSHelperFn):
     def JSONrepr(self):
         return self.data
 
+    def to_python_call(self):
+        return PythonCall(self, *self.data.values())
+
 
 class FindInMap(AWSHelperFn):
     def __init__(self, mapname, key, value):
@@ -272,6 +286,9 @@ class FindInMap(AWSHelperFn):
 
     def JSONrepr(self):
         return self.data
+
+    def to_python_call(self):
+        return PythonCall(self, *self.data.values()[0])
 
 
 class GetAtt(AWSHelperFn):
@@ -281,6 +298,9 @@ class GetAtt(AWSHelperFn):
     def JSONrepr(self):
         return self.data
 
+    def to_python_call(self):
+        return PythonCall(self, *self.data.values()[0])
+
 
 class GetAZs(AWSHelperFn):
     def __init__(self, region=""):
@@ -288,6 +308,9 @@ class GetAZs(AWSHelperFn):
 
     def JSONrepr(self):
         return self.data
+
+    def to_python_call(self):
+        return PythonCall(self, *self.data.values())
 
 
 class If(AWSHelperFn):
@@ -297,6 +320,9 @@ class If(AWSHelperFn):
     def JSONrepr(self):
         return self.data
 
+    def to_python_call(self):
+        return PythonCall(self, *self.data.values()[0])
+
 
 class Equals(AWSHelperFn):
     def __init__(self, value_one, value_two):
@@ -304,6 +330,9 @@ class Equals(AWSHelperFn):
 
     def JSONrepr(self):
         return self.data
+
+    def to_python_call(self):
+        return PythonCall(self, *self.data.values()[0])
 
 
 class And(AWSHelperFn):
@@ -313,6 +342,9 @@ class And(AWSHelperFn):
     def JSONrepr(self):
         return self.data
 
+    def to_python_call(self):
+        return PythonCall(self, *self.data.values()[0])
+
 
 class Or(AWSHelperFn):
     def __init__(self, cond_one, cond_two, *conds):
@@ -320,6 +352,9 @@ class Or(AWSHelperFn):
 
     def JSONrepr(self):
         return self.data
+
+    def to_python_call(self):
+        return PythonCall(self, *self.data.values()[0])
 
 
 class Not(AWSHelperFn):
@@ -329,6 +364,9 @@ class Not(AWSHelperFn):
     def JSONrepr(self):
         return self.data
 
+    def to_python_call(self):
+        return PythonCall(self, *self.data.values()[0])
+
 
 class Join(AWSHelperFn):
     def __init__(self, delimiter, values):
@@ -336,6 +374,9 @@ class Join(AWSHelperFn):
 
     def JSONrepr(self):
         return self.data
+
+    def to_python_call(self):
+        return PythonCall(self, *self.data.values()[0])
 
 
 class Name(AWSHelperFn):
@@ -345,6 +386,9 @@ class Name(AWSHelperFn):
     def JSONrepr(self):
         return self.data
 
+    def to_python_call(self):
+        return PythonCall(self, self.data)
+
 
 class Select(AWSHelperFn):
     def __init__(self, indx, objects):
@@ -352,6 +396,9 @@ class Select(AWSHelperFn):
 
     def JSONrepr(self):
         return self.data
+
+    def to_python_call(self):
+        return PythonCall(self, *self.data.values()[0])
 
 
 class Ref(AWSHelperFn):
@@ -361,6 +408,9 @@ class Ref(AWSHelperFn):
     def JSONrepr(self):
         return self.data
 
+    def to_python_call(self):
+        return PythonCall(self, *self.data.values())
+
 
 class Condition(AWSHelperFn):
     def __init__(self, data):
@@ -368,6 +418,9 @@ class Condition(AWSHelperFn):
 
     def JSONrepr(self):
         return self.data
+
+    def to_python_call(self):
+        return PythonCall(self, *self.data.values())
 
 
 class awsencode(json.JSONEncoder):
@@ -379,6 +432,7 @@ class awsencode(json.JSONEncoder):
 
 class Tags(AWSHelperFn):
     def __init__(self, **kwargs):
+        self.kwargs = kwargs
         self.tags = []
         for k, v in sorted(kwargs.iteritems()):
             self.tags.append({
@@ -393,6 +447,9 @@ class Tags(AWSHelperFn):
 
     def JSONrepr(self):
         return self.tags
+
+    def to_python_call(self):
+        return PythonCall(self, **self.kwargs)
 
 
 class Template(object):
@@ -495,7 +552,7 @@ class Parameter(AWSDeclaration):
     props = {
         'Type': (basestring, True),
         'Default': (basestring, False),
-        'NoEcho': (bool, False),
+        'NoEcho': (real_boolean, False),
         'AllowedValues': (list, False),
         'AllowedPattern': (basestring, False),
         'MaxLength': (validators.positive_integer, False),
@@ -517,3 +574,11 @@ class Parameter(AWSDeclaration):
                 if p in self.properties:
                     raise ValueError("%s can only be used with parameters of "
                                      "the Number type." % p)
+
+
+class PythonCall(object):
+    """ Target and arguments for a python method call """
+    def __init__(self, target, *args, **kwargs):
+        self.target = target
+        self.args = args
+        self.kwargs = kwargs

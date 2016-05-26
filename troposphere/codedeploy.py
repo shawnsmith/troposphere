@@ -4,8 +4,7 @@
 # See LICENSE file for full license.
 
 from . import AWSObject, AWSProperty
-from .validators import positive_integer
-
+from .validators import positive_integer, real_boolean
 
 KEY_ONLY = "KEY_ONLY"
 VALUE_ONLY = "VALUE_ONLY"
@@ -40,7 +39,7 @@ class Revision(AWSProperty):
 class Deployment(AWSProperty):
     props = {
         'Description': (basestring, False),
-        'IgnoreApplicationStopFailures': (bool, False),
+        'IgnoreApplicationStopFailures': (real_boolean, False),
         'Revision': (Revision, True),
     }
 

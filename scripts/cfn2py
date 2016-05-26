@@ -1,347 +1,172 @@
 #!/usr/bin/env python
 
-
 import argparse
 import json
 import keyword
-import pprint
+import re
+import sys
+import types
+
+from troposphere import PythonCall
+from troposphere.template_generator import TemplateGenerator
+
+valid_python_id = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
 
 
-class object_registry(object):
-    """Keep track of objects being created as Parameters or Resources
-    in order to map back to due to use in intrinsic functions like
-    Ref() and GetAtt().
-    """
-    def __init__(self):
-        self.objects = {}
+class PythonPrinter(object):
+    indent_per_level = 4
 
-    def add(self, o):
-        new_name = o.replace('-', '_')
-        self.objects[o] = new_name
-        return new_name
+    def __init__(self, indent=4, stream=None):
+        self._indent_per_level = indent
+        self._stream = stream or sys.stdout
 
-    def lookup(self, o):
-        if o in self.objects:
-            return self.objects[o]
-        else:
-            return output_value(o)
+    def pprint(self, obj, level=0):
+        indent0 = level * self._indent_per_level
+        indent1 = (level + 1) * self._indent_per_level
+        level += 1
+        write = self._stream.write
 
-objects = object_registry()
-
-object_functions = {
-    "Table":        [ "AttributeDefinition", "KeySchema", "ProvisionedThroughput", "Projection", "GlobalSecondaryIndex", "LocalSecondaryIndex", "StreamSpecification" ],
-    "LoadBalancer": [ "HealthCheck", "ConnectionDrainingPolicy", "AccessLoggingPolicy" ],
-    "Queue":        [ "RedrivePolicy" ],
-    "Bucket":       [ "VersioningConfiguration", "WebsiteConfiguration" ],
-    "User":         [ "LoginProfile" ],
-    "Topic":        [ "Subscription" ],
-    "Instance":     [ "NetworkInterfaceProperty", "PrivateIpAddressSpecification" ],
-    "RecordSet":    [ "RecordSetType" ],
-    "Policy":       [ "PolicyType" ],
-    "Environment":  [ "OptionSettings", "SourceBundle", "Tier" ],
-}
-
-def additional_imports(o):
-    if object_functions.has_key(o):
-        return ", ".join([o] + object_functions[o])
-    else:
-        return o
-
-def do_header(d):
-    """Output a stock header for the new Python script and also try to
-    figure out the Resource imports needed by the template.
-    """
-    print 'from troposphere import Base64, Select, FindInMap, GetAtt, GetAZs, Join, Output'
-    print 'from troposphere import Parameter, Ref, Tags, Template'
-    print 'from troposphere.cloudformation import Init'
-    print 'from troposphere.cloudfront import Distribution, DistributionConfig'
-    print 'from troposphere.cloudfront import Origin, DefaultCacheBehavior'
-    print 'from troposphere.ec2 import PortRange'
-
-    # Loop over the resources to find imports
-    if 'Resources' in d:
-        seen = []
-        modules = {}
-        resources = d['Resources']
-        for k, v in resources.items():
-            (mod, tropo_object) = generate_troposphere_object(v['Type'])
-            if tropo_object not in seen:
-                seen.append(tropo_object)
-                print 'from troposphere.%s import %s' % (mod, additional_imports(tropo_object))
-            modules[mod] = mod
-        if modules:
-            print 'from troposphere import %s' % (", ".join(sorted(modules.keys())))
-    print
-    print
-    print "t = Template()"
-    print
-
-
-def do_awstemplateformatversion(d):
-    """Output the template version"""
-    print 't.add_version("%s")' % (d['AWSTemplateFormatVersion'], )
-    print
-
-
-def do_description(d):
-    """Output the template Description"""
-    print 't.add_description("""\\\n%s""")' % (d['Description'], )
-    print
-
-
-def do_parameters(d):
-    """Output the template Parameters"""
-    params = d['Parameters']
-    for k, v in params.items():
-        object_name = objects.add(k)
-        print '%s = t.add_parameter(Parameter(' % (object_name,)
-        print '    %s,' % (output_value(k), )
-        for pk, pv in v.items():
-            print '    %s=%s,' % (pk, output_value(pv))
-        print "))"
-        print
-
-
-def do_mappings(d):
-    """Output the template Mappings"""
-    mappings = d['Mappings']
-    for k, v in mappings.items():
-        print 't.add_mapping(%s,' % (output_value(k),)
-        pprint.pprint(v)
-        print ")"
-        print
-
-
-module_aliases = {
-    "dynamodb":     "dynamodb2"
-}
-
-def generate_troposphere_object(typename):
-    """Try to determine the troposphere object to create from the Type
-    specification from the Resource being converted.
-    """
-    t = typename.split(':')
-    if len(t) == 5:
-        mod = t[2].lower()
-        if module_aliases.has_key(mod):
-            mod = module_aliases[mod]
-        return (mod, t[4])
-    else:
-        return ('', typename)
-
-
-def output_dict(d):
-    out = []
-    for k,v in d.items():
-        out.append("%s=%s" % (k.replace('\\', '\\\\'), output_value(v)))
-    return ", ".join(out)
-
-known_functions = {
-    "DistributionConfig":       1,
-    "DefaultCacheBehavior":     1,
-    "ProvisionedThroughput":    1,
-    "NetworkInterfaces":        1,
-    "WebsiteConfiguration":     1,
-    "RedrivePolicy":            1,
-    "Subscription":             1,
-    "AttributeDefinitions":     1,
-    "GlobalSecondaryIndexes":   1,
-    "LocalSecondaryIndexes":    1,
-    "KeySchema":                1,
-    "Projection":               1,
-    "VersioningConfiguration":  1,
-    "SourceBundle":             1,
-    "OptionSettings":           1,
-    "Tier":                     1,
-    "HashKeyElement":           1,
-    "HealthCheck":              1,
-    "LoginProfile":             1,
-    "ConnectionDrainingPolicy": 1,
-    "AccessLoggingPolicy":      1,
-    "AWS::CloudFormation::Init":1,
-    "PrivateIpAddresses"       :1,
-    "ContainerDefinitions"     :1,
-}
-
-function_quirks = {
-    "AttributeDefinitions":   [ "AttributeDefinition" ],
-    "GlobalSecondaryIndexes": [ "GlobalSecondaryIndex" ],
-    "LocalSecondaryIndexes":  [ "LocalSecondaryIndex" ],
-    "KeySchema":          [ "KeySchema" ],
-    "HashKeyElement":     { "Element": ["AttributeName", "AttributeType"] },
-    "NetworkInterfaces":  [ "NetworkInterfaceProperty" ],
-    "Subscription":       [ "Subscription" ],
-    "LoginProfile":       { "LoginProfile": ["Password"] },
-    "AWS::CloudFormation::Init": {"Init": []},
-    "PrivateIpAddresses" : ["PrivateIpAddressSpecification"],
-    "ContainerDefinitions": ["ContainerDefinition"],
-    "OptionSettings":     ["OptionSettings"],
-}
-
-def do_output_function(k, f, v):
-    print '    %s=%s(' % (k, f)
-    for pk, pv in v.items():
-        if known_functions.has_key(pk):
-            do_resources_content(pk, pv, "")
-        else:
-            print "        %s=%s," % (pk, output_value(pv))
-    print '    ),'
-
-def do_output_quirk_list(k, f, v):
-    print '    %s=[' % (k)
-    for e in v:
-        print '    %s(' % (f)
-        for pk, pv in e.items():
-            if known_functions.has_key(pk):
-                do_resources_content(pk, pv)
+        if isinstance(obj, list):
+            if len(obj) == 0:
+                write('[]')
             else:
-                print "        %s=%s," % (pk, output_value(pv))
-        print '    ),'
-    print '    ],'
+                write('[')
+                for v in obj:
+                    write('\n' + ' '*indent1)
+                    self.pprint(v, level)
+                    write(',')
+                write('\n' + ' '*indent0 + ']')
+            return
 
-def do_output_quirk_mapping(k, v):
-    m = function_quirks[k]
-    for pk in m.keys():
-        print '    %s=%s(' % (k, pk)
-        for e in m[pk]:
-            print "        %s," % (output_value(v[e]))
-        print '    ),'
-
-def do_output_quirk_metadata(k, v):
-    m = function_quirks[k]
-    for pk in m.keys():
-        print '    Metadata=%s(' % (pk)
-        print "        %s," % (output_value(v))
-        print '    ),'
-
-def do_resources_content(k, v, p=""):
-    if function_quirks.has_key(k):
-        x = function_quirks[k]
-        if(isinstance(x, dict)):
-            if(p == "Metadata"):
-                do_output_quirk_metadata(k, v)
+        if isinstance(obj, dict):
+            if len(obj) == 0:
+                write('{}')
             else:
-                do_output_quirk_mapping(k, v)
-        elif(isinstance(x, list)):
-           do_output_quirk_list(k, x[0], v)
-        else:
-           do_output_function(k, x, v)
-    else:
-        do_output_function(k, k, v)
+                write('{')
+                for k, v in sorted(obj.items()):
+                    write('\n' + ' '*indent1 + _repr(k) + ': ')
+                    self.pprint(v, level)
+                    write(',')
+                write('\n' + ' '*indent0 + '}')
+            return
 
-top_level_aliases = {
-    "RecordSet": "RecordSetType",
-    "Policy":    "PolicyType",
-}
+        if getattr(type(obj), "to_python_call", None):
+            obj = obj.to_python_call()
 
-def do_resources(d):
-    """Output the template Resources"""
-    resources = d['Resources']
-    for k, v in resources.items():
-        object_name = objects.add(k)
-        (mod, tropo_object) = generate_troposphere_object(v['Type'])
-        if(top_level_aliases.has_key(tropo_object)):
-            tropo_object = top_level_aliases[tropo_object]
-        print '%s = t.add_resource(%s.%s(' % (object_name, mod, tropo_object)
-        print '    %s,' % (output_value(k), )
-        for p in filter(lambda x: v.has_key(x), ['Metadata', 'Properties']):
-            for pk, pv in v[p].items():
-                if pk == "Tags":
-                    if filter(lambda d: keyword.iskeyword(d['Key']), pv):
-                        print '    Tags=Tags(**{'
-                        for d in pv:
-                            print "        %s: %s," % (
-                                output_value(d['Key']), output_value(d['Value']))
-                        print '    }),'
-                    else:
-                        print '    Tags=Tags('
-                        for d in pv:
-                            print "        %s=%s," % (
-                                d['Key'], output_value(d['Value']))
-                        print '    ),'
-                elif pk == 'PortRange':
-                    print "    %s=%s(%s)," % (pk, pk, output_dict(pv))
-                elif known_functions.has_key(pk):
-                    do_resources_content(pk, pv, p)
+        if isinstance(obj, PythonCall):
+            if isinstance(obj.target, basestring):
+                target = str(obj.target)
+            else:
+                target = _class_name(obj.target)
+
+            use_named_params = all([
+                valid_python_id.match(k) and not keyword.iskeyword(k) for k in obj.kwargs.keys()
+            ])
+
+            write(target + '(')
+            indent_end = ''
+
+            # Regular arguments
+            if len(obj.args) == 0:
+                pass
+            elif len(obj.args) == 1 and (len(obj.kwargs) == 0 or isinstance(obj.args[0], basestring)):
+                # special case for a single argument, works well for resource titles etc.
+                self.pprint(obj.args[0], level - 1)
+                if len(obj.kwargs) > 0:
+                    write(',')
+            else:
+                for v in obj.args:
+                    write('\n' + ' '*indent1)
+                    self.pprint(v, level)
+                    write(',')
+                indent_end = '\n' + ' '*indent0
+
+            # Keyword arguments
+            if len(obj.kwargs) == 0:
+                pass
+            else:
+                if use_named_params:
+                    # preferred format for keyword arguments
+                    for k, v in sorted(obj.kwargs.items()):
+                        write('\n' + ' '*indent1 + k + '=')
+                        self.pprint(v, level)
+                        write(',')
                 else:
-                    print '    %s=%s,' % (pk, output_value(pv))
-        if v.has_key("DependsOn"):
-            print '    %s=%s,' % ("DependsOn", output_value(v['DependsOn']))
-        print "))"
-        print
+                    # one of the argument names isn't a valid python identifier, format as regular dict literal
+                    write('**')
+                    self.pprint(obj.kwargs, level - (0 if len(obj.args) > 1 else 1))
+                indent_end = '\n' + ' '*indent0
+
+            write(indent_end + ')')
+            return
+
+        write(_repr(obj))
 
 
-def handle_no_objects(name, values):
-    """Handle intrinsic functions which do not have a named resource"""
-    return name + "(" + ", ".join(map(output_value, values)) + ")"
-
-def handle_one_object(name, values):
-    """Handle intrinsic functions which have a single named resource"""
-    ret = name + "("
-    for i, param in enumerate(values):
-        if i > 0:
-            ret += ", "
-        # First parameter might be an object name or pseudo parameter
-        if i == 0:
-            ret += objects.lookup(param)
-        else:
-            ret += output_value(param)
-    return ret + ")"
+def _repr(v):
+    if type(v) == types.UnicodeType:
+        v = str(v)
+    return repr(v)
 
 
-function_map = {
-    'Fn::Base64': ("Base64", handle_no_objects),
-    'Fn::FindInMap': ("FindInMap", handle_no_objects),
-    'Fn::GetAtt': ("GetAtt", handle_one_object),
-    'Fn::GetAZs': ("GetAZs", handle_no_objects),
-    'Fn::Join': ("Join", handle_no_objects),
-    'Fn::Select': ("Select", handle_one_object),
-    'Ref': ("Ref", handle_one_object),
-}
+def _class_name(obj):
+    """
+    Given a Troposphere object, returns the python name of the object class minus the
+    'troposphere.' prefix, eg. 's3.Bucket'.
+    """
+    full_name = obj.__module__ + '.' + obj.__class__.__name__
+    return full_name.replace('troposphere.', '')
 
 
-def output_value(v):
-    """Output a value which may be a string or a set of function calls."""
-    if isinstance(v, basestring):
-        return quote_string(v)
-    elif isinstance(v, bool):
-        return '%s' % (str(v))
-    elif isinstance(v, int):
-        return '%d' % (v)
-    elif isinstance(v, list):
-        return "[" + ", ".join(map(output_value, v)) + "]"
+def pprint(template, stream=None):
+    if stream is None:
+        stream = sys.stdout
+    pprint = PythonPrinter(stream=stream).pprint
+    write = stream.write
 
-    out = []
-    # Should only be one of these...
-    for fk, fv in v.items():
-        if fk in function_map:
-            (shortname, handler) = function_map[fk]
-            if not isinstance(fv, list):
-                fv = [fv]
-            return handler(shortname, fv)
-        else:
-            out.append( '"' + fk + '": ' + output_value(fv))
-    return "{ " + ", ".join(out) + " }"
+    # Header
+    write('from troposphere import *\n')
+    write('from troposphere import %s\n' % (
+        ', '.join(sorted(set(
+            ['cloudformation', 'policies'] +
+            [r.__module__.replace('troposphere.', '') for r in template.resources.values()]))),
+    ))
+    write('\n')
 
+    # Construct the Template
+    write('t = Template()\n')
+    if template.version:
+        pprint(PythonCall('t.add_version', template.version))
+        write('\n\n')
+    if template.description:
+        pprint(PythonCall('t.add_description', template.description))
+        write('\n\n')
+    if template.metadata:
+        pprint(PythonCall('t.add_metadata', template.metadata))
+        write('\n\n')
+    if template.conditions:
+        for k, v in sorted(template.conditions.items()):
+            pprint(PythonCall('t.add_condition', k, v))
+            write('\n\n')
+    if template.parameters:
+        for k, v in sorted(template.parameters.items()):
+            pprint(PythonCall('t.add_parameter', v))
+            write('\n\n')
+    if template.add_mapping:
+        for k, v in sorted(template.mappings.items()):
+            pprint(PythonCall('t.add_mapping', k, v))
+            write('\n\n')
+    if template.add_resource:
+        for k, v in sorted(template.resources.items(), key=lambda (k, v): (_class_name(v), k)):
+            pprint(PythonCall('t.add_resource', v))
+            write('\n\n')
+    if template.add_output:
+        for k, v in sorted(template.outputs.items()):
+            pprint(PythonCall('t.add_output', v))
+            write('\n\n')
 
-def quote_string(s):
-    return '"%s"' % s.replace('\\', '\\\\').replace('\n', '\\n').replace("\"", "\\\"")
-
-def do_outputs(d):
-    """Output the template Outputs"""
-    outputs = d['Outputs']
-    for k, v in outputs.items():
-        print '%s = t.add_output(Output(' % (k,)
-        print '    %s,' % (quote_string(k), )
-        for pk, pv in v.items():
-            print '    %s=%s,' % (pk, output_value(pv))
-        print "))"
-        print
-
-
-def do_trailer(d):
-    """Output a trailer section for the new Python script."""
-    print 'print(t.to_json())'
+    # Trailer
+    write('print(t.to_json())\n')
 
 
 if __name__ == "__main__":
@@ -351,19 +176,6 @@ if __name__ == "__main__":
 
     d = json.load(open(args.filename))
 
-    do_header(d)
+    template = TemplateGenerator(d)
 
-    sections = [
-        'AWSTemplateFormatVersion',
-        'Description',
-        'Parameters',
-        'Mappings',
-        'Resources',
-        'Outputs',
-    ]
-
-    for s in sections:
-        if s in d.keys():
-            globals()["do_" + s.lower()](d)
-
-    do_trailer(d)
+    pprint(template)

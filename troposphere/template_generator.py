@@ -19,6 +19,7 @@ import importlib
 
 from collections import Sequence, Mapping
 
+import troposphere
 from troposphere import (
     Template, Ref,
     Output, Parameter,  # AWSDeclarations
@@ -275,11 +276,20 @@ class TemplateGenerator(Template):
     def _generate_autoscaling_metadata(self, cls, args):
         """ Provides special handling for the autoscaling.Metadata object """
         assert isinstance(args, Mapping)
-        init_config = self._create_instance(
-            cloudformation.InitConfig,
-            args['AWS::CloudFormation::Init']['config'])
-        init = self._create_instance(
-            cloudformation.Init, {'config': init_config})
+        if len(args['AWS::CloudFormation::Init']) == 1:
+            init_config = self._create_instance(
+                cloudformation.InitConfig,
+                args['AWS::CloudFormation::Init']['config'])
+            init = self._create_instance(
+                cloudformation.Init, {'config': init_config})
+        else:
+            init_config_sets = cloudformation.InitConfigSets(
+                **args['AWS::CloudFormation::Init']['configSets'])
+            init_configs = {
+                k: self._create_instance(cloudformation.InitConfig, v)
+                for k, v in args['AWS::CloudFormation::Init'].items()
+                if k != 'configSets'}
+            init = cloudformation.Init(init_config_sets, **init_configs)
         auth = None
         if 'AWS::CloudFormation::Authentication' in args:
             auth_blocks = {}
@@ -308,11 +318,11 @@ class TemplateGenerator(Template):
     def _import_all_troposphere_modules(self):
         """ Imports all troposphere modules and returns them """
         module_names = [
-            pkg_name
+            'troposphere.' + pkg_name
             for importer, pkg_name, is_pkg in
-            pkgutil.walk_packages(__file__)
-            if not is_pkg and pkg_name.startswith("troposphere") and
-            pkg_name not in self.DEPRECATED_MODULES]
+            pkgutil.walk_packages(troposphere.__path__)
+            if not is_pkg and
+           'troposphere.' + pkg_name not in self.DEPRECATED_MODULES]
         module_names.append('troposphere')
 
         modules = []

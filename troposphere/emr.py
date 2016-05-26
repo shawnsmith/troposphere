@@ -3,7 +3,7 @@
 #
 # See LICENSE file for full license.
 
-from . import AWSObject, AWSProperty, AWSHelperFn
+from . import AWSObject, AWSProperty, AWSHelperFn, PythonCall
 from .validators import (boolean, integer, positive_integer)
 
 
@@ -13,6 +13,9 @@ class KeyValue(AWSHelperFn):
 
     def JSONrepr(self):
         return self.data
+
+    def to_python_call(self):
+        return PythonCall(self, self.data['Key'], self.data['Value'])
 
 
 def additional_info_validator(xs):

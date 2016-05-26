@@ -1,5 +1,5 @@
 from . import AWSObject, AWSProperty
-from .validators import positive_integer
+from .validators import positive_integer, real_boolean
 
 MEMORY_VALUES = [x for x in range(128, 1600, 64)]
 
@@ -58,7 +58,7 @@ class EventSourceMapping(AWSObject):
 
     props = {
         'BatchSize': (positive_integer, False),
-        'Enabled': (bool, False),
+        'Enabled': (real_boolean, False),
         'EventSourceArn': (basestring, True),
         'FunctionName': (basestring, True),
         'StartingPosition': (basestring, True),

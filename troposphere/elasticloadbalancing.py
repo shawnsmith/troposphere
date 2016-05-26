@@ -5,7 +5,7 @@
 
 from . import AWSObject, AWSProperty
 from .validators import (
-    boolean, integer_range, positive_integer, network_port, integer)
+    boolean, integer_range, positive_integer, network_port, integer, real_boolean)
 
 
 class AppCookieStickinessPolicy(AWSProperty):
@@ -55,7 +55,7 @@ class Policy(AWSProperty):
 
 class ConnectionDrainingPolicy(AWSProperty):
     props = {
-        'Enabled': (bool, True),
+        'Enabled': (real_boolean, True),
         'Timeout': (integer, False)
     }
 
@@ -69,7 +69,7 @@ class ConnectionSettings(AWSProperty):
 class AccessLoggingPolicy(AWSProperty):
     props = {
         'EmitInterval': (integer, False),
-        'Enabled': (bool, True),
+        'Enabled': (real_boolean, True),
         'S3BucketName': (basestring, False),
         'S3BucketPrefix': (basestring, False),
     }

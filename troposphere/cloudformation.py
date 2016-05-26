@@ -3,7 +3,7 @@
 #
 # See LICENSE file for full license.
 
-from . import AWSHelperFn, AWSObject, AWSProperty, BaseAWSObject
+from . import AWSHelperFn, AWSObject, AWSProperty, BaseAWSObject, PythonCall
 from .validators import integer, boolean, encoding
 
 
@@ -56,6 +56,9 @@ class Metadata(AWSHelperFn):
             t += i.JSONrepr().items()
         return dict(t)
 
+    def to_python_call(self):
+        return PythonCall(self, *self.data)
+
 
 class InitFileContext(AWSHelperFn):
     def __init__(self, data):
@@ -64,6 +67,8 @@ class InitFileContext(AWSHelperFn):
     def JSONrepr(self):
         return self.data
 
+    def to_python_call(self):
+        return PythonCall(self, self.data)
 
 class InitFile(AWSProperty):
     props = {
@@ -90,6 +95,9 @@ class InitFiles(AWSHelperFn):
 
     def JSONrepr(self):
         return self.data
+
+    def to_python_call(self):
+        return PythonCall(self, self.data)
 
 
 class InitService(AWSProperty):
@@ -118,6 +126,9 @@ class InitServices(AWSHelperFn):
     def JSONrepr(self):
         return self.data
 
+    def to_python_call(self):
+        return PythonCall(self, self.data)
+
 
 class InitConfigSets(AWSHelperFn):
     def __init__(self, **kwargs):
@@ -131,6 +142,9 @@ class InitConfigSets(AWSHelperFn):
 
     def JSONrepr(self):
         return self.data
+
+    def to_python_call(self):
+        return PythonCall(self, **self.data)
 
 
 class InitConfig(AWSProperty):
@@ -181,6 +195,9 @@ class Authentication(AWSHelperFn):
     def JSONrepr(self):
         return self.data
 
+    def to_python_call(self):
+        return PythonCall(self, self.data.values())
+
 
 class Init(AWSHelperFn):
     def __init__(self, data, **kwargs):
@@ -212,3 +229,12 @@ class Init(AWSHelperFn):
 
     def JSONrepr(self):
         return self.data
+
+    def to_python_call(self):
+        data = self.data.values()[0]
+        if len(data) == 1:
+            # single 'config' entry
+            return PythonCall(self, data)
+        else:
+            # 'configSets' entry plus multiple InitConfig entries
+            return PythonCall(self, data['configSets'], **{k: v for k, v in data.items() if k != 'configSets'})

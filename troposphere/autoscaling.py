@@ -2,8 +2,8 @@
 # All rights reserved.
 #
 # See LICENSE file for full license.
-
-from . import AWSHelperFn, AWSObject, AWSProperty, If, FindInMap, Ref
+from cloudformation import Init, InitConfig, InitConfigSets, Authentication
+from . import AWSHelperFn, AWSObject, AWSProperty, If, FindInMap, Ref, PythonCall
 from .validators import boolean, integer
 from . import cloudformation
 
@@ -32,6 +32,9 @@ class Tag(AWSHelperFn):
 
     def JSONrepr(self):
         return self.data
+
+    def to_python_call(self):
+        return PythonCall(self, self.data['Key'], self.data['Value'], self.data['PropagateAtLaunch'])
 
 
 class Tags(AWSHelperFn):
@@ -106,6 +109,23 @@ class Metadata(AWSHelperFn):
 
     def JSONrepr(self):
         return self.data
+
+    def to_python_call(self):
+        init_data = self.data['AWS::CloudFormation::Init']
+        if len(init_data) == 1:
+            # single 'config' entry
+            init = Init(init_data)
+        else:
+            # 'configSets' entry plus multiple InitConfig entries
+            init_config_sets = init_data['configSets']
+            init_configs = {k: v for k, v in init_data.items() if k != 'configSets'}
+            init = Init(init_config_sets, **init_configs)
+
+        args = []
+        if 'AWS::CloudFormation::Authentication' in self.data:
+            args.append(Authentication(self.data['AWS::CloudFormation::Authentication']))
+
+        return PythonCall(self, init, *args)
 
 
 class AutoScalingGroup(AWSObject):
